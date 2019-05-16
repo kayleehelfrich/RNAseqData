@@ -1,0 +1,21 @@
+Modules used for runs from 2/14/19-3/6/19
+These generated the fetal and maternal liver samples analyzed by Kaylee.
+
+
+FASTQC
+fastqc/0.11.7
+
+MultiQC
+python/2.7.12 and multiqc/1.5
+
+Bowtie2
+1) perl/5.18.2   2) bowtie2/2.3.4.1
+
+Samtools
+1) samtools/1.9
+
+featureCounts
+subread/1.5.2
+
+Genome
+MM10_UCSC
