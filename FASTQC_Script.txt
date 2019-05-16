@@ -1,0 +1,69 @@
+#####Run the paired end reads separately from each other#######
+
+###Log onto server###
+ssh onyen@longleaf.unc.edu
+
+####To run FASTQC########
+
+#Put files from original locations into /pine/scr/k/h/khelfri/fastqc_190213
+cp /proj/ssmithlab/HTSF/180906_UNC31-K00269_0151_AHWNCYBBXX/ /pine/scr/k/h/khelfri//fastqc_190213/
+cp /proj/ssmithlab/HTSF/180919_UNC32-K00270_0120_AHWNC3BBXX/PREGB6-E*.fastq.gz /pine/scr/k/h/khelfri/fastqc_190213/
+#####When doing this, do not click anything else or the copying will stop.#####
+
+#Load the fastqc program
+module load fastqc
+
+#Check which version of the fastqc program was used and record it for later reference
+module list
+
+##on 2/14/19, 2/20/19 used  fastqc/0.11.7
+
+#Get help and more info on the fastqc command
+fastqc -h
+
+#Run program on the local machine or on the original server (not recommended, especially for large jobs)
+fastqc filename.gz
+
+#Run program on the server for a single file
+sbatch -p general --mem=10g --wrap="fastqc PREGB6-B1_ATTACTCG-CCTATCCT_S33_L005_R1_001.fastq.gz -o ../fastqc_output/"
+
+#Run multiple FASTQ files at the same time. 
+sbatch -p general --mem=10g --wrap="fastqc *.fastq.gz -o ../fastqc_output/"
+
+# Run multiple FASTQ files at the same time with a time limit of 8 hours so it won't time out early. This gives it 8 hours.
+sbatch -p general --time=8:0:0 --mem=10g --wrap="fastqc *.fastq.gz -o ../fastqc_output/"
+
+#if wanted to put into a folder that is at the same level as the files that are running, use "-o fastqc_output/"
+
+#To extract the zip file, add "--extract" to the launch command.
+
+#Move final files to a new location if desired
+mv *.zip ~/dc_workshop/results/fastqc_untrimmed_reads/
+mv *.html ~/dc_workshop/results/fastqc_untrimmed_reads/
+
+#To view results, download the html files onto the computer using FileZilla, and then double click the downloaded files to open them in a web browser
+#All of the actual data from FASTQC is stored in the "*.zip" file.
+
+#######To run MultiQC############
+#Load multiqc
+module load multiqc
+
+#Check with version of multiqc I'm using
+module list 
+
+##on 2/14/19, 2/20/19 used python/2.7.12 and multiqc/1.5
+
+#Run multiqc in the current directory (it ran quickly, so probably okay to run on local machine if you want)
+multiqc .
+ 
+#Run multiqc via a SLURM script and put output into the current directory
+sbatch -p general --time=8:0:0 --mem=10g --wrap="multiqc ."
+
+#Run multiqc in a specified directory
+multiqc data/
+multiqc data/*_fastqc.zip
+
+#Run multiqc and ignore certain samples
+multiqc . --ignore */run_three/*/fastqc/*_R2.zip
+
+####Move files over to Smith Lab server using FileZilla#####
