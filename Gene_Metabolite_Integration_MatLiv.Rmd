@@ -1,0 +1,173 @@
+---
+title: "Integrating the Differentially Expressed Genes and Differentially Present Metabolites from the Maternal Liver Data"
+author: "Kaylee Helfrich"
+date: "7/30/2019 - 7/31/2019"
+output: pdf_document
+data: DEG_Results_MDvAlc_MatLiv_LFCShrink_VSTParam_RemovedNA_ExcelProof.txt
+      MaternalLiver_Metabolite_File_Modified.csv
+---
+Built with R `r getRversion()`
+
+```{r RMarkdown setup, include = FALSE, message = FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=60), tidy=TRUE)
+knitr::opts_knit$set(root.dir = "~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv\Gene_Metabolite_Integration")
+options(tinytex.verbose = TRUE)
+```
+
+# Purpose of the Integration of Gene Expression and Metabolite Data
+One of the goals for this project is for us to look at the whole picture of how alcohol changes both genes and metabolites and how these two factors are integrated to respond differently to the environment. This code details how to create graphs of KEGG pathways that are annotated with the fold changes of both metabolites and transcripts in response to alcohol. Observing how the genes and metabolites of each pathway change in response to alcohol will promote future hypotheses about how alcohol alters metabolism in the maternal and fetal tisues. This code specifically details alcohol's effects on maternal liver tissue. To find pathways of interest, look [here](https://www.genome.jp/kegg/pathway.html)). Of note, this analysis does not consider signifiance, only coordinated fold changes. This analysis could be redone by selecting out only the significant genes and metabolites and then specifying their fold changes, but this is likely to limit the results quite a bit. This version of the analysis is specifically looking for coordinated changes across an entire pathway.  
+
+```{r include = FALSE}
+rm(list=ls())
+setwd("~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/Gene_Metabolite_Integration")
+library("BiocParallel")
+library("org.Mm.eg.db")
+library("AnnotationHub")
+library("pathview")
+library("annotables")
+library("dplyr")
+```
+
+## Prepare gene data table
+This preparation loads the table of gene expression, cleans it, annotates it with Entrez IDs (which are needed for the annotation of KEGG pathways), removes duplicate and non-existent Entrez IDs, and creates a vector of the log2 fold changes for the genes which are labeled with Entrez IDs.
+```{r Load file and add Entrez IDs and sort by fold change, message = FALSE, warning = FALSE}
+file <- read.table("~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/Gene_Metabolite_Integration/DEG_Results_MDvAlc_MatLiv_LFCShrink_VSTParam_RemovedNA_ExcelProof.txt", header = TRUE, sep = "")
+file <- file[,-1] #remove first column which has meaningless numbers
+idx <- grcm38$symbol %in% file$GeneID #Return the IDs for the gene symbols in the DE results
+ids <- grcm38[idx, ] #new dataframe with the IDs from the DE results that pulls all info from grcm38
+#remove any duplicated symbols since gene names can map to more than one Ensembl ID
+non_duplicates <- which(duplicated(ids$symbol) == FALSE) 
+ids <- ids[non_duplicates, ] #add only the nonduplicated symbols to the file
+#add the gene IDs and other information to the DEG results
+file_ids <- inner_join(file, ids, by=c("GeneID"="symbol")) 
+file_ids <- file_ids[,c(1,23:30,2:22)] #switch the order of the columns
+file_entrez <- filter(file_ids, entrez != "NA") #remove any NA values
+file_entrez <- file_entrez[which(duplicated(file_entrez$entrez) == F), ] #remove any Entrez duplicates
+foldchanges <- file_entrez$log2FoldChange #Extract foldchanges
+names(foldchanges) <- as.character(file_entrez$entrez) #Name each fold change with its Entrez ID
+foldchanges <- sort(foldchanges, decreasing = TRUE) #sort gene list into descending list (not necessary for this analysis, but I did it anyway)
+```
+
+## Prepare metabolite data table
+This loads the metabolite file, adds in NA's where the table has blank spaces, removes any rows where the KEGG ID is NA or duplicate KEGG IDs, converts the fold changes to log2 fold changes, extracts out the fold changes and names, and sorts the fold changes in descending order. 
+```{r}
+file_met <- read.csv("~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/Gene_Metabolite_Integration/MaternalLiver_Metabolite_File_Modified.csv", header = TRUE, na.strings = "NA")
+file_met <- na_if(file_met, "") #add in NA's where there are blank spaces
+file_met_filtered <- filter(file_met, KEGG != "NA") #remove rows where metabolites do not have KEGG #'s
+file_met_filtered <- file_met_filtered[which(duplicated(file_met_filtered$KEGG) == F), ] #remove any KEGG duplicates
+file_met_filtered$log2foldchange <- log2(file_met_filtered$Fold.change)#convert fold changes to log2 fold changes. Otherwise, the gene and metabolite data is not on the same scale.
+foldchanges_met <- file_met_filtered$log2foldchange #extracts out a vector of the log2foldchanges
+names(foldchanges_met) <- as.character(file_met_filtered$KEGG) #names the vector of log2foldchanges with the KEGG IDs
+foldchanges_met <- sort(foldchanges_met, decreasing = TRUE) #sort the log2fold changes in descending order
+```
+
+The original metabolite list has **854** metabolites. After filtering out metabolites that do not have a KEGG ID, there are **407** and after removing duplicate KEGG IDs, there are **376** metabolites with associated KEGG IDs. 
+
+# Create annotated KEGG pathways
+This step creates the actual annotated KEGG graphs. 
+```{r}
+#if you want to create multiple graphs at the same time, use this code. Then, just add the word "pathways" after the "pathway.id" in the code below
+pathways <- c("mmu00010", #glycolysis/gluconeogenesis
+              "mmu00020", #TCA cycle
+              "mmu00030", #pentose phosphate pathway
+              "mmu00040", #pentose and glucuronate interconversions
+              "mmu00051", #fructose and mannose metabolism
+              "mmu00052", #galactose converstion
+              "mmu00053", #ascorbate and aldarate metabolism
+              "mmu00500", #starch and sucrose metabolism
+              "mmu00520", #amino sugar and nucleotide sugar metabolism
+              "mmu00620", #pyruvate metabolism
+              "mmu00630", #glyoxylate and dicarboxylate metabolism
+              "mmu00640", #propanoate metabolism
+              "mmu00650", #butanoate metabolism
+              "mmu00562", #inositol phosphate metabolism
+              "mmu00190", #oxidative phosphorylation
+              "mmu00920", #sulfur metabolism
+              "mmu00061", #fatty acid biosynthesis
+              "mmu00062", #fatty acid elongation
+              "mmu00071", #fatty acid degradation
+              "mmu00072", #synthesis and degradation of ketone bodies
+              "mmu00100", #steroid biosynthesis
+              "mmu00120", #primary bile acid biosynthesis
+              #"mmu00121", #secondary bile acid biosynthesis; this one didn't work
+              "mmu00140", #steroid hormone biosynthesis
+              "mmu00561", #glycerolipid metabolism
+              "mmu00564", #glycerophospholipid metabolism
+              "mmu00565", #ether lipid metabolism
+              "mmu00600", #sphingolipid metabolism
+              "mmu00590", #arachidonic acid metabolism
+              "mmu00591", #linoleic acid metabolism
+              "mmu00592", #alpha-linolenic acid metabolism
+              "mmu01040", #biosynthesis of unsaturated fatty acids
+              "mmu00230", #purine metabolism
+              "mmu00240", #pyrimidine metabolism
+              "mmu00250", #alanine, aspartate, and glutamate metabolism
+              "mmu00260", #glycine, serine, and threonine metabolism
+              "mmu00270", #cysteine and methionine metabolism
+              "mmu00280", #valine, leucine, and isoleucine degradation
+              "mmu00290", #valine, leucine, and isoleucine biosynthesis
+              #"mmu00300", #lysine biosynthesis; this one didn't work
+              "mmu00310", #lysine degradation
+              "mmu00220", #arginine biosynthesis
+              "mmu00330", #arginine and proline metabolism
+              "mmu00340", #histidine metabolism
+              "mmu00350", #tyrosine metabolism
+              "mmu00360", #phenylalanine metabolism
+              "mmu00380", #tryptophan metabolism
+              "mmu00400", #phenylalanine, tyrosine, and tryptophan biosynthesis
+              "mmu00430", #taurine and hypotaurine metabolism
+              "mmu00480", #glutathione metabolism
+              "mmu00730", #thiamine metabolism
+              "mmu00740", #riboflavin metabolism
+              "mmu00750", #vitamin B6 metabolism
+              "mmu00760", #nicotinate and nicotinamide metabolism
+              "mmu00770", #pantothenate and CoA biosynthesis
+              "mmu00780", #biotin metabolism
+              "mmu00785", #lipoic acid metabolism
+              "mmu00790", #folate biosynthesis
+              "mmu00670", #one carbon pool by folate
+              "mmu00830", #retinol metabolism
+              "mmu00980", #metabolism of xenobiotics by cytochrome P450
+              "mmu00982", #drug metabolism- cytochrome P450
+              "mmu00983" #drug metabolism- other enzymes
+)
+
+#Create native KEGG-view graph
+pathview(gene.data = foldchanges, #specify gene list for annotation
+         cpd.data = foldchanges_met, #did not use compound data for this set
+         xml.file = NULL, #did not generate from a raw file
+         pathway.id = pathways, #IMPORTANT- this is where you specify which pathway you want to investigate. Make sure to include the prefix to define that this is mouse
+         species = "mmu", 
+         #kegg.dir = ".", 
+         cpd.idtype = "kegg", 
+         gene.idtype = "entrez", 
+         #gene.annotpkg = NULL, 
+         #min.nnodes = 3, 
+         #kegg.native = TRUE,
+         #map.null = TRUE, 
+         #expand.node = FALSE, 
+         #split.group = FALSE, 
+         #map.symbol = TRUE, 
+         #map.cpdname = TRUE, 
+         #node.sum = "sum", 
+         #discrete=list(gene=FALSE, cpd=FALSE), 
+         limit = list(gene = 2, cpd = 1), #this one sets the ends of the scale
+         #bins = list(gene = 10, cpd = 10), 
+         #both.dirs = list(gene = T, cpd = T), 
+         #trans.fun = list(gene = NULL, cpd = NULL), 
+         low = list(gene = "green", cpd = "blue"), 
+         mid = list(gene = "gray", cpd = "gray"), 
+         high = list(gene = "red", cpd = "yellow"), 
+         #na.col = "transparent"
+)
+
+#Create Graphviz-view graph
+paths_graphviz <- pathview(gene.data = foldchanges,
+                           cpd.data = foldchanges_met,
+              pathway.id = pathways,
+              species = "mmu",
+              limit = list(gene = 2, cpd = 1),
+              kegg.native = FALSE)
+```
+

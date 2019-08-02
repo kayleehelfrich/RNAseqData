@@ -1,0 +1,88 @@
+---
+title: "Individual KEGG Pathway Annotation on Maternal Liver Data"
+author: "Kaylee Helfrich"
+date: "7/29/2019"
+output: pdf_document
+data: DEG_Results_MDvAlc_MatLiv_LFCShrink_VSTParam_RemovedNA_ExcelProof.txt
+---
+Built with R `r getRversion()`
+
+```{r RMarkdown setup, include = FALSE, message = FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=60), tidy=TRUE)
+knitr::opts_knit$set(root.dir = "~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/GSEA")
+options(tinytex.verbose = TRUE)
+```
+
+# Purpose of Individual KEGG Pathway Annotation Code
+This code allows the user to create annotated KEGG pathways using the log fold changes of the transcriptome data. Simply specify the correct dataset of Entrez gene IDs and associated log fold changes. Also, specify the pathway that you want to annotate (you can find pathways of interest [here](https://www.genome.jp/kegg/pathway.html)). 
+
+```{r include = FALSE}
+rm(list=ls())
+setwd("~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/Individual_KEGG_Annotation")
+library("BiocParallel")
+library("org.Mm.eg.db")
+library("pathview")
+```
+
+## Prepare data table for pathway annotation
+```{r Load file and add Entrez IDs and sort by fold change, message = FALSE, warning = FALSE}
+file <- read.table("~/KayleeStuff/Smith_Lab/Data/RNA_Seq/Mat_Liv/Individual_KEGG_Annotation/DEG_Results_MDvAlc_MatLiv_LFCShrink_VSTParam_RemovedNA_ExcelProof.txt", header = TRUE, sep = "")
+file <- file[,-1] #remove first column which has meaningless numbers
+idx <- grcm38$symbol %in% file$GeneID #Return the IDs for the gene symbols in the DE results
+ids <- grcm38[idx, ] #new dataframe with the IDs from the DE results that pulls all info from grcm38
+#remove any duplicated symbols since gene names can map to more than one Ensembl ID
+non_duplicates <- which(duplicated(ids$symbol) == FALSE) 
+ids <- ids[non_duplicates, ] #add only the nonduplicated symbols to the file
+#add the gene IDs and other information to the DEG results
+file_ids <- inner_join(file, ids, by=c("GeneID"="symbol")) 
+file_ids <- file_ids[,c(1,23:30,2:22)] #switch the order of the columns
+file_entrez <- filter(file_ids, entrez != "NA") #remove any NA values
+file_entrez <- file_entrez[which(duplicated(file_entrez$entrez) == F), ] #remove any Entrez duplicates
+foldchanges <- file_entrez$log2FoldChange #Extract foldchanges
+names(foldchanges) <- as.character(file_entrez$entrez) #Name each fold change with its Entrez ID
+foldchanges <- sort(foldchanges, decreasing = TRUE) #sort gene list into descending list for the GSEA which requires a sorted list
+```
+
+## Create annotated KEGG pathways
+```{r}
+#if you want to create multiple graphs at the same time, use this code. Then, just add the word "pathways" after the "pathway.id" in the code below
+pathways <- c("mmu04350", "mmu04072")
+
+#Create native KEGG-view graph
+pathview(gene.data = foldchanges, #specify gene list for annotation
+         cpd.data = NULL, #did not use compound data for this set
+         xml.file = NULL, #did not generate from a raw file
+         pathway.id = "mmu04350", #IMPORTANT- this is where you specify which pathway you want to investigate. Make sure to include the prefix to define that this is mouse
+         species = "mmu", 
+         #kegg.dir = ".", 
+         #cpd.idtype = "kegg", 
+         gene.idtype = "entrez", 
+         #gene.annotpkg = NULL, 
+         #min.nnodes = 3, 
+         #kegg.native = TRUE,
+         #map.null = TRUE, 
+         #expand.node = FALSE, 
+         #split.group = FALSE, 
+         #map.symbol = TRUE, 
+         #map.cpdname = TRUE, 
+         #node.sum = "sum", 
+         #discrete=list(gene=FALSE, cpd=FALSE), 
+         limit = list(gene = 2, cpd = 1), 
+         #bins = list(gene = 10, cpd = 10), 
+         #both.dirs = list(gene = T, cpd = T), 
+         #trans.fun = list(gene = NULL, cpd = NULL), 
+         #low = list(gene = "green", cpd = "blue"), 
+         #mid = list(gene = "gray", cpd = "gray"), 
+         #high = list(gene = "red", cpd = "yellow"), 
+         #na.col = "transparent"
+)
+
+#Create Graphviz-view graph
+paths_graphviz <- pathview(gene.data = foldchanges,
+              pathway.id = "mmu00010",
+              species = "mmu",
+              limit = list(gene = 2, cpd = 1),
+              kegg.native = FALSE)
+```
+
